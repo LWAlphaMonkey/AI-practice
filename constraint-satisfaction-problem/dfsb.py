@@ -85,6 +85,20 @@ class CSP:
             print('Invalid input file')
             sys.exit(-1)
 
+    def create_output(self, assignment):
+        fp = open(self.output, 'w')
+
+        if self.goal_test(assignment):
+            [fp.write(str(assignment[result]) + '\n') for result in assignment]
+
+            if DEBUG:
+                print("The assignment is correct")
+                print(ret)
+        else:
+            fp.write("No answer")
+
+        fp.close()
+
     def assign_value(self, variable, value, assignment):
         '''
         assign variable and value to assignment
@@ -207,18 +221,15 @@ def main():
     start = time.time()
 
     csp = CSP(sys.argv)
+
+    ret = DFSB().search(csp)
+    csp.create_output(ret)
+    end = time.time()
+
     if DEBUG:
         print('csp: ', csp.csp)
         print('output: ', csp.output)
         print('mode: ', csp.mode)
-    ret = DFSB().search(csp)
-
-    end = time.time()
-
-    if DEBUG:
-        if csp.goal_test(ret):
-            print("The assignment is correct")
-        print(ret)
         print("%2.2fms" % ((end - start) * 1000))
 
 
