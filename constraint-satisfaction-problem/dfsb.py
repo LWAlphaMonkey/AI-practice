@@ -1,10 +1,12 @@
 import sys
 import os
 import time
+import copy
 import heapq
+import queue
 """Map coloring problem"""
 
-DEBUG = False
+DEBUG = True
 
 
 # 1 Input file
@@ -12,6 +14,11 @@ DEBUG = False
 # 3 mode 0: plain DFS-B,
 #        1: DFS-B with variable, value ordering + AC3 for constraint propagation
 class CSP:
+    '''
+    pseudo code references:
+        for structure enhancement purpose: http://aima.cs.berkeley.edu/python/csp.html
+    '''
+
     def __init__(self, argv):
         '''
         assign
@@ -25,10 +32,21 @@ class CSP:
         self.csp = self.parse_input(argv[1])
         self.output = argv[2]
         self.mode = int(argv[3])
+
         self.input_checking()
+
         self.assign = {}
-        self.domains = {}
-        self.current_domain = {}
+        # self.m0_domain = {}
+        self.m1_domain = {}
+        self.counter = 0
+
+    def input_checking(self):
+        '''
+        input argument checking, if mode is not 0 or 1, exit
+        '''
+        if self.mode != 0 and self.mode != 1:
+            print('Invalid input file')
+            sys.exit(-1)
 
     def parse_input(self, file_name):
         '''
@@ -40,13 +58,11 @@ class CSP:
                            'counstraint': each constraint}
                       }
         '''
-
         ret = {}
         fp = open(file_name, 'r')
 
         try:
             ret['C'] = {}
-
             ret['X'], ret['C']['counts'], ret['D'] = map(
                 int,
                 fp.readline().rstrip('\n').split('\t'))
@@ -70,39 +86,37 @@ class CSP:
             fp.close()
             sys.exit(-1)
 
-            if DEBUG:
-                print('variables:', ret['X'], ' constraints:', constraint,
-                      ' doma/ins:', ret['D'])
-                print(ret)
-
         return ret
-
-    def input_checking(self):
-        '''
-        input argument checking, if mode is not 0 or 1, exit
-        '''
-        if self.mode != 0 and self.mode != 1:
-            print('Invalid input file')
-            sys.exit(-1)
 
     def create_output(self, assignment):
         fp = open(self.output, 'w')
 
         if self.goal_test(assignment):
-            [fp.write(str(assignment[result]) + '\n') for result in assignment]
-
-            if DEBUG:
-                print("The assignment is correct")
-                print(ret)
+            [
+                fp.write(str(assignment[result]) + '\n')
+                for result in range(self.csp['X'])
+            ]
         else:
             fp.write("No answer")
 
         fp.close()
 
+        if DEBUG:
+            print("\n\n=========================")
+            try:
+                [
+                    print(str(assignment[result]))
+                    for result in range(self.csp['X'])
+                ]
+            except:
+                print("No answer")
+            print("=========================\n\n")
+
     def assign_value(self, variable, value, assignment):
         '''
         assign variable and value to assignment
         '''
+        self.counter += 1
         self.assign[variable] = value
         assignment[variable] = value
 
@@ -128,6 +142,9 @@ class CSP:
         '''
         check the assignment is correct or not
         '''
+        if assignment is None:
+            return False
+
         for variable in assignment:
             constraints = self.csp['C']['constraint'][variable]
             if len(constraints) == 0:
@@ -135,10 +152,16 @@ class CSP:
             for conflict in constraints:
                 if conflict in assignment and assignment[conflict] == assignment[variable]:
                     return False
+
         return True
 
 
 class DFSB:
+    '''
+    pseudo code references:
+        DFSB: AIMA [Fig 6.5]
+    '''
+
     def search(self, csp):
         '''
         returns a solution, or failure
@@ -148,18 +171,21 @@ class DFSB:
     def recursive_search(self, assignment, csp):
         '''
         returns a solution, or failure
-        csp.mode = 0 => return DFSB result
-                 = 1 => return DFSB++ result
         '''
         if len(assignment) == csp.csp['X']:
             return assignment
 
-        variable = self.select_unsigned_variable(assignment, csp)
+        variable = HEURISTICS().select_unsigned_variable(assignment, csp)
 
-        for value in self.order_domain_values(variable, assignment, csp):
+        for value in HEURISTICS().order_domain_values(variable, assignment,
+                                                      csp):
             csp.assign_value(variable, value, assignment)
+            if DEBUG:
+                print('%d. (var: %d, val: %d), assignment: %d\n' %
+                      (csp.counter, variable, value, len(assignment)))
 
             if csp.check_conflict(variable, value, assignment):
+
                 result = self.recursive_search(assignment, csp)
 
                 if result is not None:
@@ -167,37 +193,41 @@ class DFSB:
 
             csp.unassign_value(variable, assignment)
 
-        # if csp.mode == 0:
-        #     if DEBUG:
-        #         print("Plain DFS")
-        # else:
-        #     if DEBUG:
-        #         print("DFSB++")
-        #     var = select_unsigned_variable(csp)
 
-        # for value in order_domain_values(var, assignment, csp):
-
-    def recursive_plus_plus(self, assignment, csp):
-        if DEBUG:
-            print("DFSB++")
+class HEURISTICS:
+    '''
+    variable ordering purpose: select_unsigned_variable
+    value ordering purpose: order_domain_values
+    inference purpose: AC_3
+    '''
 
     def select_unsigned_variable(self, assignment, csp):
         '''
-        csp.mode = 0 => fixed order
-                 = 1 => using minimum-remaining-value heuristic 
-                        and degree heuristic
+
         '''
         if csp.mode == 0:
-            if DEBUG:
-                print("Plain DFS: select unsigned variable")
-
             for var in range(csp.csp['X']):
                 if var not in assignment:
                     return var
         else:
+            modified_constraint = copy.deepcopy(csp.csp['C']['constraint'])
             if DEBUG:
-                print("DFSB++: select unsigned variable")
-        return csp
+                print("iteration: ", csp.counter, "\nassignment: ", assignment,
+                      "constraint: ", modified_constraint)
+
+            for variable in assignment:
+                modified_constraint.pop(variable)
+
+            var = max(
+                modified_constraint,
+                key=lambda idx: len(modified_constraint[idx]))
+
+            if DEBUG:
+                print("modified-constraint: ", modified_constraint)
+                print("selected variable: ", var)
+                input("")
+
+            return var
 
     def order_domain_values(self, variable, assignment, csp):
         '''
@@ -205,16 +235,21 @@ class DFSB:
                  = 1 => using least-constraining-value heuristic
         '''
         if csp.mode == 0:
-            if DEBUG:
-                print("Plain DFS: order domain values")
-
             values = [val for val in range(csp.csp['D'])]
         else:
-            if DEBUG:
-                print("DFSB++: order domain values")
-            values = []
+            values = [val for val in range(csp.csp['D'])]
 
         return values
+
+    def AC_3(self, csp):
+        '''
+        '''
+        pass
+
+    def revise(self, Xi, Xj):
+        '''
+        '''
+        pass
 
 
 def main():
