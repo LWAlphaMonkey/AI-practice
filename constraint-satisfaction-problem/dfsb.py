@@ -32,13 +32,21 @@ class CSP:
         self.csp = self.parse_input(argv[1])
         self.output = argv[2]
         self.mode = int(argv[3])
+        self.assign = {}
+        self.m0_domain = {}
+        self.m1_domain = {}
+        self.counter = 0
 
         self.input_checking()
 
-        self.assign = {}
-        # self.m0_domain = {}
-        self.m1_domain = {}
-        self.counter = 0
+        if self.mode == 0:
+            self.init_m0_domain()
+        else:
+            self.init_m1_domain()
+
+    def print_csp(self):
+        attrs = vars(self)
+        print('\n'.join("%s: %s" % item for item in attrs.items()))
 
     def input_checking(self):
         '''
@@ -47,6 +55,18 @@ class CSP:
         if self.mode != 0 and self.mode != 1:
             print('Invalid input file')
             sys.exit(-1)
+
+    def init_m0_domain(self):
+        for variable in range(self.csp['X']):
+            self.m0_domain[variable] = [
+                value for value in range(self.csp['D'])
+            ]
+
+    def init_m1_domain(self):
+        for variable in range(self.csp['X']):
+            self.m1_domain[variable] = [
+                value for value in range(self.csp['D'])
+            ]
 
     def parse_input(self, file_name):
         '''
@@ -119,6 +139,8 @@ class CSP:
         self.counter += 1
         self.assign[variable] = value
         assignment[variable] = value
+        if self.mode == 1:
+            HEURISTICS().AC3(self, [(Xk, var) for Xk in self.neighbors[var]])
 
     def unassign_value(self, variable, assignment):
         '''
@@ -137,6 +159,20 @@ class CSP:
                 return False
 
         return True
+
+    def count_conflicts(self, variable, value, assignment):
+        constraints = self.csp['C']['constraint'][variable]
+        count = 0
+
+        if len(constraints) > 0:
+            for conflict in constraints:
+                if conflict in assignment and assignment[conflict] == value:
+                    count += 1
+
+        if DEBUG:
+            print("constraints[%d]: " % variable, constraints)
+
+        return count
 
     def goal_test(self, assignment):
         '''
@@ -199,10 +235,20 @@ class HEURISTICS:
     variable ordering purpose: select_unsigned_variable
     value ordering purpose: order_domain_values
     inference purpose: AC_3
+    references:
+        AIMA chapter 6.3.1
     '''
 
     def select_unsigned_variable(self, assignment, csp):
         '''
+        case DFSB plain:
+            select unsigned variable in a fixed order
+        case DFSB++:
+            select unsigned variable based on the following heuristics:
+                1. degree
+                2. minimum-remaining-values
+
+        references: AIMA chapter 6.3.1
 
         '''
         if csp.mode == 0:
@@ -210,24 +256,58 @@ class HEURISTICS:
                 if var not in assignment:
                     return var
         else:
-            modified_constraint = copy.deepcopy(csp.csp['C']['constraint'])
-            if DEBUG:
-                print("iteration: ", csp.counter, "\nassignment: ", assignment,
-                      "constraint: ", modified_constraint)
-
-            for variable in assignment:
-                modified_constraint.pop(variable)
-
-            var = max(
-                modified_constraint,
-                key=lambda idx: len(modified_constraint[idx]))
-
-            if DEBUG:
-                print("modified-constraint: ", modified_constraint)
-                print("selected variable: ", var)
-                input("")
+            filtered_by_degree = self.degree(assignment, csp)
+            var = self.minimum_remaining_values(filtered_by_degree, csp)
+            print("select unsigned variable:", var)
 
             return var
+
+    def degree(self, assignment, csp):
+        '''
+        returns those most constrained unsigned variables
+        '''
+        modified_constraint = copy.deepcopy(csp.csp['C']['constraint'])
+        variables = []
+
+        if DEBUG:
+            print("iteration: ", csp.counter, "\nassignment: ", assignment,
+                  "constraint: ", modified_constraint)
+
+        for variable in assignment:
+            modified_constraint.pop(variable)
+
+        max_len = len(modified_constraint[max(
+            modified_constraint,
+            key=lambda idx: len(modified_constraint[idx]))])
+
+        variables = [
+            idx for idx in modified_constraint
+            if len(modified_constraint[idx]) == max_len
+        ]
+
+        if DEBUG:
+            print("modified-constraint: ", modified_constraint)
+            print("selected variables: ", variables)
+            input("")
+
+        return variables
+
+    def minimum_remaining_values(self, variables, csp):
+        '''
+        returns one unsigned variable which has minimum remaining values
+        '''
+        if len(variables) == 1:
+            return variables
+        else:
+            ret_value = len(csp.m1_domain[variables[0]])
+            ret_variable = variables[0]
+            for variable in variables:
+                curr_value = len(csp.m1_domain[variable])
+                if curr_value < ret_value:
+                    ret_value = curr_value
+                    ret_variable = variable
+
+            return ret_variable
 
     def order_domain_values(self, variable, assignment, csp):
         '''
@@ -235,9 +315,17 @@ class HEURISTICS:
                  = 1 => using least-constraining-value heuristic
         '''
         if csp.mode == 0:
-            values = [val for val in range(csp.csp['D'])]
+            values = csp.m0_domain[variable]
         else:
-            values = [val for val in range(csp.csp['D'])]
+            values = csp.m1_domain[variable]
+            conflict_list = [[
+                csp.count_conflicts(variable, value, assignment), value
+            ] for value in values]
+            values = [value[1] for value in sorted(conflict_list)]
+
+            if DEBUG:
+                print("values: ", values)
+                input("")
 
         return values
 
@@ -262,7 +350,10 @@ def main():
     end = time.time()
 
     if DEBUG:
-        print('csp: ', csp.csp)
+        # print('csp.csp: ', csp.csp)
+        # print('csp.mode:', csp.mode)
+        # print('csp.')
+        csp.print_csp()
         print('output: ', csp.output)
         print('mode: ', csp.mode)
         print("%2.2fms" % ((end - start) * 1000))
