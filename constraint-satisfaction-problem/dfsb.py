@@ -2,11 +2,11 @@ import sys
 import os
 import time
 import copy
-import heapq
 import queue
 """Map coloring problem"""
 
 DEBUG = True
+DEBUG_WITH_BREAK = False
 
 
 # 1 Input file
@@ -139,8 +139,8 @@ class CSP:
         self.counter += 1
         self.assign[variable] = value
         assignment[variable] = value
-        if self.mode == 1:
-            HEURISTICS().AC3(self, [(Xk, var) for Xk in self.neighbors[var]])
+        # if self.mode == 1:
+        #     HEURISTICS().AC3(self, [(Xk, var) for Xk in self.neighbors[var]])
 
     def unassign_value(self, variable, assignment):
         '''
@@ -169,7 +169,7 @@ class CSP:
                 if conflict in assignment and assignment[conflict] == value:
                     count += 1
 
-        if DEBUG:
+        if DEBUG_WITH_BREAK:
             print("constraints[%d]: " % variable, constraints)
 
         return count
@@ -258,7 +258,6 @@ class HEURISTICS:
         else:
             filtered_by_degree = self.degree(assignment, csp)
             var = self.minimum_remaining_values(filtered_by_degree, csp)
-            print("select unsigned variable:", var)
 
             return var
 
@@ -269,7 +268,7 @@ class HEURISTICS:
         modified_constraint = copy.deepcopy(csp.csp['C']['constraint'])
         variables = []
 
-        if DEBUG:
+        if DEBUG_WITH_BREAK:
             print("iteration: ", csp.counter, "\nassignment: ", assignment,
                   "constraint: ", modified_constraint)
 
@@ -285,7 +284,7 @@ class HEURISTICS:
             if len(modified_constraint[idx]) == max_len
         ]
 
-        if DEBUG:
+        if DEBUG_WITH_BREAK:
             print("modified-constraint: ", modified_constraint)
             print("selected variables: ", variables)
             input("")
@@ -297,7 +296,7 @@ class HEURISTICS:
         returns one unsigned variable which has minimum remaining values
         '''
         if len(variables) == 1:
-            return variables
+            return variables[0]
         else:
             ret_value = len(csp.m1_domain[variables[0]])
             ret_variable = variables[0]
@@ -317,14 +316,15 @@ class HEURISTICS:
         if csp.mode == 0:
             values = csp.m0_domain[variable]
         else:
-            values = csp.m1_domain[variable]
+            value_list = csp.m1_domain[variable]
             conflict_list = [[
                 csp.count_conflicts(variable, value, assignment), value
-            ] for value in values]
+            ] for value in value_list]
             values = [value[1] for value in sorted(conflict_list)]
 
             if DEBUG:
                 print("values: ", values)
+            if DEBUG_WITH_BREAK:
                 input("")
 
         return values
@@ -356,6 +356,7 @@ def main():
         csp.print_csp()
         print('output: ', csp.output)
         print('mode: ', csp.mode)
+        print('result: ', ret, 'csp assign: ', csp.assign)
         print("%2.2fms" % ((end - start) * 1000))
 
 
