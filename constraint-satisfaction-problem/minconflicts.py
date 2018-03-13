@@ -1,11 +1,7 @@
 import sys
-import os
 import time
-import copy
-import heapq
-import queue
 import random
-"""Map coloring problem"""
+import signal
 
 DEBUG = False
 
@@ -19,14 +15,14 @@ class CSP:
 
         self.csp = self.parse_input(argv[1])
         self.output = argv[2]
-        self.assign = {}
-        self.domain = {}
         self.counter = 0
-        self.init_domain()
-        self.initial_complete_assignment()
+        self.domain = self.init_domain()
+        self.assign = self.initial_complete_assignment()
+        self.last_variable = 0
 
     def parse_input(self, file_name):
         '''
+        parse input file
         inputs: input file
         returns: csp {
                       'X': variables
@@ -66,10 +62,17 @@ class CSP:
         return ret
 
     def init_domain(self):
+        ret = {}
+
         for variable in range(self.csp['X']):
-            self.domain[variable] = [value for value in range(self.csp['D'])]
+            ret[variable] = [value for value in range(self.csp['D'])]
+
+        return ret
 
     def create_output(self, assignment):
+        '''
+        write the searching result
+        '''
         fp = open(self.output, 'w')
 
         if self.goal_test(assignment):
@@ -95,10 +98,15 @@ class CSP:
 
     def initial_complete_assignment(self):
         '''
-        naive assignment: assign the same color to each variable
+        randomly assign the value to each variable
+        returns a complete assignment
         '''
+        assignment = {}
+
         for variable in range(self.csp['X']):
-            self.assign[variable] = random.choice(range(self.csp['D']))
+            assignment[variable] = random.choice(range(self.csp['D']))
+
+        return assignment
 
     def assign_value(self, variable, value):
         '''
@@ -106,18 +114,6 @@ class CSP:
         '''
         self.counter += 1
         self.assign[variable] = value
-
-    def check_conflict(self, variable, value, assignment):
-        constraints = self.csp['C']['constraint'][variable]
-
-        if len(constraints) == 0:
-            return True
-
-        for conflict in constraints:
-            if conflict in assignment and assignment[conflict] == value:
-                return False
-
-        return True
 
     def count_conflicts(self, variable, value):
         constraints = self.csp['C']['constraint'][variable]
@@ -134,8 +130,11 @@ class CSP:
         return count
 
     def get_conflict_list(self):
+        '''
 
+        '''
         conflict_list = []
+
         for idx in self.assign:
             if self.count_conflicts(idx, self.assign[idx]) > 0:
                 conflict_list.append(idx)
@@ -166,18 +165,17 @@ class CSP:
 
 
 class MINCONFLICTS:
+    '''
+    min-conflicts local search heuristic
+    '''
+
     def __init__(self):
+        '''
+        tabu_list: a list of visited states and forbidding the algorithm to retun to these states 
+        last_variable: keeps the last randomly selected variable to avoid picking the same variable continuously
+        '''
         self.tabu_list = {}
-
-    def pre_test(self, csp):
-        if csp.goal_test(csp.assign):
-            return True
-
-        conflict_list = csp.get_conflict_list()
-        variable = random.choice(conflict_list)
-        self.last_variable = variable
-
-        return False
+        self.last_variable = 0
 
     def main_process(self, csp, max_steps=1000000):
         '''
@@ -185,9 +183,6 @@ class MINCONFLICTS:
         inputs: csp, a constraint satisfaction problem
         max_steps: the number of steps allowed before giving up
         '''
-        if self.pre_test(csp):
-            return csp.assign
-
         count = 0
         valid_assign = False
 
@@ -209,10 +204,6 @@ class MINCONFLICTS:
                              for value in csp.domain[variable]]
             values = [value[1] for value in sorted(conflict_list)]
 
-            # if DEBUG:
-            #     print("random choice variable: ", variable)
-            #     print(csp.domain)
-            #     print("conflict list: ", conflict_list, "values: ", values)
             for value in values:
                 csp.assign_value(variable, value)
                 key = ''.join("%d" % val for (key, val) in csp.assign.items())
@@ -226,32 +217,47 @@ class MINCONFLICTS:
 
             valid_assign = False
 
-            if count == 1000:
-                print("reset the csp initial state")
+            if count == 100:
+                count = 0
                 csp.initial_complete_assignment()
 
         return csp.assign
 
 
+class TIMER:
+    '''
+    reference: https://docs.python.org/3/library/signal.html#example
+    '''
+
+    def __init__(self, time=60):
+        self.time = time
+        signal.signal(signal.SIGALRM, self.timeout)
+        signal.alarm(self.time)
+
+    def timeout(self, signum, frame):
+        raise TimeoutError
+
+
 def main():
-    start = time.time()
+    try:
+        TIMER(30)
+        start = time.time()
+        csp = CSP(sys.argv)
+        ret = MINCONFLICTS().main_process(csp)
 
-    csp = CSP(sys.argv)
-    ret = MINCONFLICTS().main_process(csp)
+        end = time.time()
+        csp.create_output(ret)
 
-    end = time.time()
-    csp.create_output(ret)
+        if DEBUG:
+            if ret:
+                print("# of iterations: ", csp.counter)
+                print('result: \n', ret)
+            else:
+                print("fail")
+            print("%2.2fms" % ((end - start) * 1000))
 
-    if ret:
-        print("# of iterations: ", csp.counter)
-        print('result: \n', ret)
-    else:
-        print("fail")
-    print("%2.2fms" % ((end - start) * 1000))
-
-    if DEBUG:
-        print('result: \n', ret, 'csp assign: ', csp.assign)
-        print("%2.2fms" % ((end - start) * 1000))
+    except TimeoutError:
+        csp.create_output(None)
 
 
 if __name__ == '__main__':
