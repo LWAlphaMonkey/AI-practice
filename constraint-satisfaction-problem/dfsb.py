@@ -1,8 +1,9 @@
 import sys
 import os
 import time
+import signal
 import copy
-import queue
+import random
 """Map coloring problem"""
 
 DEBUG = True
@@ -21,8 +22,6 @@ class CSP:
 
     def __init__(self, argv):
         '''
-        assign
-        current_domain
         '''
         if len(argv) != 4:
             print('Invalid input arguments. Usage:')
@@ -32,7 +31,6 @@ class CSP:
         self.csp = self.parse_input(argv[1])
         self.output = argv[2]
         self.mode = int(argv[3])
-        self.assign = {}
         self.m0_domain = {}
         self.m1_domain = {}
         self.counter = 0
@@ -83,22 +81,22 @@ class CSP:
 
         try:
             ret['C'] = {}
-            ret['X'], ret['C']['counts'], ret['D'] = map(
+            ret['X'], constraint_num, ret['D'] = map(
                 int,
                 fp.readline().rstrip('\n').split('\t'))
             constraints = fp.readlines()
 
-            if len(constraints) != ret['C']['counts']:
+            if len(constraints) != constraint_num:
                 raise
 
-            ret['C']['constraint'] = {val: [] for val in range(ret['X'])}
+            ret['C'] = {val: [] for val in range(ret['X'])}
 
             for cons in constraints:
                 x, y = map(int, cons.rstrip('\n').split('\t'))
-                if y not in ret['C']['constraint'][x]:
-                    ret['C']['constraint'][x].append(y)
-                if x not in ret['C']['constraint'][y]:
-                    ret['C']['constraint'][y].append(x)
+                if y not in ret['C'][x]:
+                    ret['C'][x].append(y)
+                if x not in ret['C'][y]:
+                    ret['C'][y].append(x)
 
             fp.close()
         except:
@@ -137,19 +135,42 @@ class CSP:
         assign variable and value to assignment
         '''
         self.counter += 1
-        self.assign[variable] = value
+
         assignment[variable] = value
-        # if self.mode == 1:
-        #     HEURISTICS().AC3(self, [(Xk, var) for Xk in self.neighbors[var]])
+
+        if self.mode == 1:
+            if DEBUG_WITH_BREAK:
+                print("variable: ", variable, "value: ", value)
+                print(self.csp)
+                print("constrants: ", self.csp['C'][variable])
+                print([(Xj, variable) for Xj in self.csp['C'][variable]])
+
+            print(self.m1_domain[variable])
+            HEURISTICS().AC3(
+                self, [(Xj, variable) for Xj in self.csp['C'][variable]])
+            print(self.m1_domain[variable])
+            input("")
 
     def unassign_value(self, variable, assignment):
         '''
         unassign variable and value to assignment
         '''
-        assignment.pop(variable)
+        if variable in assignment:
+            assignment.pop(variable)
+
+        if self.mode == 1:
+            self.m1_domain[variable] = [
+                value for value in range(self.csp['D'])
+            ]
+
+    def constraints(self, variable_1, value_1, variable_2, value_2):
+        if variable_2 in self.csp['C'][variable_1] and value_1 == value_2:
+            return False
+        else:
+            return True
 
     def check_conflict(self, variable, value, assignment):
-        constraints = self.csp['C']['constraint'][variable]
+        constraints = self.csp['C'][variable]
 
         if len(constraints) == 0:
             return True
@@ -161,7 +182,7 @@ class CSP:
         return True
 
     def count_conflicts(self, variable, value, assignment):
-        constraints = self.csp['C']['constraint'][variable]
+        constraints = self.csp['C'][variable]
         count = 0
 
         if len(constraints) > 0:
@@ -182,7 +203,7 @@ class CSP:
             return False
 
         for variable in assignment:
-            constraints = self.csp['C']['constraint'][variable]
+            constraints = self.csp['C'][variable]
             if len(constraints) == 0:
                 continue
             for conflict in constraints:
@@ -215,13 +236,14 @@ class DFSB:
 
         for value in HEURISTICS().order_domain_values(variable, assignment,
                                                       csp):
+
             csp.assign_value(variable, value, assignment)
-            if DEBUG:
+
+            if DEBUG and csp.counter % 1000 == 0:
                 print('%d. (var: %d, val: %d), assignment: %d\n' %
                       (csp.counter, variable, value, len(assignment)))
 
             if csp.check_conflict(variable, value, assignment):
-
                 result = self.recursive_search(assignment, csp)
 
                 if result is not None:
@@ -265,7 +287,7 @@ class HEURISTICS:
         '''
         returns those most constrained unsigned variables
         '''
-        modified_constraint = copy.deepcopy(csp.csp['C']['constraint'])
+        modified_constraint = copy.deepcopy(csp.csp['C'])
         variables = []
 
         if DEBUG_WITH_BREAK:
@@ -299,13 +321,23 @@ class HEURISTICS:
             return variables[0]
         else:
             ret_value = len(csp.m1_domain[variables[0]])
-            ret_variable = variables[0]
+            variable_list = []
             for variable in variables:
                 curr_value = len(csp.m1_domain[variable])
                 if curr_value < ret_value:
                     ret_value = curr_value
-                    ret_variable = variable
+                    variable_list = [variable]
 
+                elif curr_value == ret_value:
+                    variable_list.append(variable)
+
+            ret_variable = random.choice(variable_list)
+
+            # if DEBUG:
+            #     if csp.counter % 1000 == 0:
+            #         print("variables: ", variables, "mrv variable list: ",
+            #               variable_list, "select variable: ", ret_variable)
+            #         input("")
             return ret_variable
 
     def order_domain_values(self, variable, assignment, csp):
@@ -314,50 +346,109 @@ class HEURISTICS:
                  = 1 => using least-constraining-value heuristic
         '''
         if csp.mode == 0:
-            values = csp.m0_domain[variable]
+            values = csp.m0_domain[variable][:]
         else:
             value_list = csp.m1_domain[variable]
             conflict_list = [[
                 csp.count_conflicts(variable, value, assignment), value
             ] for value in value_list]
+
             values = [value[1] for value in sorted(conflict_list)]
-
-            if DEBUG:
-                print("values: ", values)
+            csp.m1_domain[variable] = values
             if DEBUG_WITH_BREAK:
+                print("values: ", values)
                 input("")
+        while values:
+            yield values.pop()
+        # return values
 
-        return values
+    def AC3(self, csp, queue=None):
+        '''
+        reference:
+            AIMA chapter 6.2.2 
+        '''
+        if queue == None:
+            queue = [(Xi, Xj) for Xi in range(csp.csp['X'])
+                     for Xj in csp.csp['C'][Xi]]
 
-    def AC_3(self, csp):
-        '''
-        '''
-        pass
+        while queue:
+            (Xi, Xj) = queue.pop()
+            if self.revise(csp, Xi, Xj):
+                # if len(csp.m1_domain[Xi]) == 0:
+                #     print("\nlength = 0\n")
+                #     return False
 
-    def revise(self, Xi, Xj):
+                for Xk in csp.csp['C'][Xi]:
+                    queue.append((Xk, Xi))
+
+        # return True
+
+    def revise(self, csp, Xi, Xj):
         '''
+        returns true iff we revise the domain of Xi
+        reference:
+            AIMA chapter 6.2.2 
         '''
-        pass
+        revised = False
+        for value_Xi in csp.m1_domain[Xi]:
+            should_remove = True
+
+            for value_Xj in csp.m1_domain[Xj]:
+                if value_Xi != value_Xj:
+                    should_remove = False
+                    break
+
+            if should_remove:
+                print("should remove")
+                input("")
+                # print(csp.m1_domain[Xi])
+
+                csp.m1_domain[Xi].remove(value_Xi)
+
+                # print(csp.m1_domain[Xi])
+                # input("")
+                revised = True
+
+        return revised
+
+
+class TIMER:
+    '''
+    reference: https://docs.python.org/3/library/signal.html#example
+    '''
+
+    def __init__(self, time=60):
+        self.time = time
+        signal.signal(signal.SIGALRM, self.timeout)
+        signal.alarm(self.time)
+
+    def timeout(self, signum, frame):
+        raise TimeoutError
 
 
 def main():
-    start = time.time()
+    try:
+        TIMER(6000)
+        start = time.time()
 
-    csp = CSP(sys.argv)
+        csp = CSP(sys.argv)
 
-    ret = DFSB().search(csp)
-    csp.create_output(ret)
-    end = time.time()
+        ret = DFSB().search(csp)
+        csp.create_output(ret)
+        end = time.time()
 
-    if DEBUG:
-        # print('csp.csp: ', csp.csp)
-        # print('csp.mode:', csp.mode)
-        # print('csp.')
-        csp.print_csp()
-        print('output: ', csp.output)
-        print('mode: ', csp.mode)
-        print('result: ', ret, 'csp assign: ', csp.assign)
-        print("%2.2fms" % ((end - start) * 1000))
+        if DEBUG:
+            # print('csp.csp: ', csp.csp)
+            # print('csp.mode:', csp.mode)
+            # print('csp.')
+            csp.print_csp()
+            print('output: ', csp.output)
+            print('mode: ', csp.mode)
+            print('result: ', ret)
+            print("%2.2fms" % ((end - start) * 1000))
+    except TimeoutError:
+        print("time out")
+        csp.create_output(None)
 
 
 if __name__ == '__main__':
