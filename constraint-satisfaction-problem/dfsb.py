@@ -6,7 +6,7 @@ import copy
 import random
 """Map coloring problem"""
 
-DEBUG = True
+DEBUG = False
 DEBUG_WITH_BREAK = False
 
 
@@ -17,12 +17,11 @@ DEBUG_WITH_BREAK = False
 class CSP:
     '''
     pseudo code references:
+        AIMA(textbook)
         for structure enhancement purpose: http://aima.cs.berkeley.edu/python/csp.html
     '''
 
     def __init__(self, argv):
-        '''
-        '''
         if len(argv) != 4:
             print('Invalid input arguments. Usage:')
             print('\tdfsb.py <input_file> <output_file> <mode_flag>')
@@ -34,6 +33,7 @@ class CSP:
         self.m0_domain = {}
         self.m1_domain = {}
         self.counter = 0
+        self.prune_counter = 0
 
         self.input_checking()
 
@@ -163,11 +163,11 @@ class CSP:
                 value for value in range(self.csp['D'])
             ]
 
-    def constraints(self, variable_1, value_1, variable_2, value_2):
-        if variable_2 in self.csp['C'][variable_1] and value_1 == value_2:
-            return False
-        else:
-            return True
+    # def constraints(self, variable_1, value_1, variable_2, value_2):
+    #     if variable_2 in self.csp['C'][variable_1] and value_1 == value_2:
+    #         return False
+    #     else:
+    #         return True
 
     def check_conflict(self, variable, value, assignment):
         constraints = self.csp['C'][variable]
@@ -189,9 +189,6 @@ class CSP:
             for conflict in constraints:
                 if conflict in assignment and assignment[conflict] == value:
                     count += 1
-
-        if DEBUG_WITH_BREAK:
-            print("constraints[%d]: " % variable, constraints)
 
         return count
 
@@ -234,30 +231,29 @@ class DFSB:
 
         variable = HEURISTICS().select_unsigned_variable(assignment, csp)
 
-        for value in HEURISTICS().order_domain_values(variable, assignment,
-                                                      csp):
-            if csp.mode == 1:
-                m1_domain_backup = copy.deepcopy(csp.m1_domain)
-
-            if csp.check_conflict(variable, value, assignment):
-
-                if csp.mode == 1:
-                    csp.m1_domain[variable] = [value]
-
-                inference = csp.assign_value(variable, value, assignment)
-
-                if DEBUG:
-                    print('%d. (var: %d, val: %d), assignment: %d\n' %
-                          (csp.counter, variable, value, len(assignment)))
-
-                if inference:
+        if csp.mode == 0:
+            for value in HEURISTICS().order_domain_values(
+                    variable, assignment, csp):
+                if csp.check_conflict(variable, value, assignment):
+                    csp.assign_value(variable, value, assignment)
                     result = self.recursive_search(assignment, csp)
                     if result is not None:
                         return result
+                csp.unassign_value(variable, assignment)
+        elif csp.mode == 1:
+            m1_domain_backup = copy.deepcopy(csp.m1_domain)
+            for value in HEURISTICS().order_domain_values(
+                    variable, assignment, csp):
 
-            if csp.mode == 1:
+                if csp.check_conflict(variable, value, assignment):
+                    csp.m1_domain[variable] = [value]
+                    if csp.assign_value(variable, value, assignment):
+                        result = self.recursive_search(assignment, csp)
+                        if result is not None:
+                            return result
+
                 csp.m1_domain = m1_domain_backup
-            csp.unassign_value(variable, assignment)
+                csp.unassign_value(variable, assignment)
 
         return None
 
@@ -308,21 +304,11 @@ class HEURISTICS:
         for variable in variables:
             modified_constraint.append((variable, len(csp.csp['C'][variable])))
 
-        if DEBUG_WITH_BREAK:
-            print("iteration: ", csp.counter, "\nassignment: ", assignment,
-                  "constraint: ", modified_constraint)
-
-        # max_len = len(modified_constraint[
         max_len = max(modified_constraint, key=lambda x: x[1])
 
         variables = [
             idx[0] for idx in modified_constraint if idx[1] == max_len[1]
         ]
-
-        if DEBUG_WITH_BREAK:
-            print("modified-constraint: ", modified_constraint)
-            print("selected variables: ", variables)
-            input("")
 
         return random.choice(variables)
 
@@ -361,9 +347,6 @@ class HEURISTICS:
 
             values = [value[1] for value in sorted(conflict_list)]
             csp.m1_domain[variable] = values
-            if DEBUG_WITH_BREAK:
-                print("values: ", values)
-                input("")
 
         return values
 
@@ -377,6 +360,7 @@ class HEURISTICS:
                      for Xj in csp.csp['C'][Xi]]
 
         while queue:
+            csp.prune_counter += 1
             (Xi, Xj) = queue.pop()
             if self.revise(csp, Xi, Xj):
                 if len(csp.m1_domain[Xi]) == 0:
@@ -395,13 +379,9 @@ class HEURISTICS:
         '''
         revised = False
 
-        # print('iter: ', csp.counter, '\nXi: ', Xi, 'domain: ',
-        #       csp.m1_domain[Xi])
         for value_Xi in csp.m1_domain[Xi]:
             should_remove = True
 
-            # print('Xj: ', Xj, 'domain: ', csp.m1_domain[Xj])
-            # input("")
             for value_Xj in csp.m1_domain[Xj]:
                 if value_Xi != value_Xj:
                     should_remove = False
@@ -438,11 +418,6 @@ def main():
         ret = DFSB().search(csp)
         csp.create_output(ret)
         end = time.time()
-
-        if DEBUG:
-            print("iterations: ", csp.counter)
-            print('result: ', ret)
-            print("%2.2fms" % ((end - start) * 1000))
 
     except TimeoutError:
         csp.create_output(None)

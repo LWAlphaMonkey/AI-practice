@@ -131,7 +131,7 @@ class CSP:
 
     def get_conflict_list(self):
         '''
-
+        return a list of variables which has at least one conflict
         '''
         conflict_list = []
 
@@ -182,6 +182,7 @@ class MINCONFLICTS:
         returns a solution or failure
         inputs: csp, a constraint satisfaction problem
         max_steps: the number of steps allowed before giving up
+        reference: AIMA Fig 6.8
         '''
         count = 0
         valid_assign = False
@@ -240,21 +241,12 @@ class TIMER:
 
 def main():
     try:
-        TIMER(30)
+        TIMER(60)
         start = time.time()
         csp = CSP(sys.argv)
         ret = MINCONFLICTS().main_process(csp)
-
         end = time.time()
         csp.create_output(ret)
-
-        if DEBUG:
-            if ret:
-                print("# of iterations: ", csp.counter)
-                print('result: \n', ret)
-            else:
-                print("fail")
-            print("%2.2fms" % ((end - start) * 1000))
 
     except TimeoutError:
         csp.create_output(None)
